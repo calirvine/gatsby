@@ -4,7 +4,7 @@ import { createPageDependency } from "./actions/add-page-dependency"
 import { IDbQueryElemMatch } from "../db/common/query"
 
 // Only list supported ops here. "CacheableFilterOp"
-type FilterOp = "$eq" | "$ne" | "$lt" | "$lte" | "$gt" | "$gte"
+type FilterOp = "$eq" | "$ne" | "$lt" | "$lte" | "$gt" | "$gte" | "$in"
 // Note: `undefined` is an encoding for a property that does not exist
 type FilterValueNullable = string | number | boolean | null | undefined
 // This is filter value in most cases
@@ -602,6 +602,29 @@ export const getNodesFromCacheByValue = (
       ])
     }
     return filterCache.byValue.get(filterValue)
+  }
+
+  if (op === `$in`) {
+    if (!Array.isArray(filterValue)) {
+      // Sift assumes the value has an `indexOf` property. By this fluke,
+      // string args would work, but I don't think that's intentional/expected.
+      throw new Error("The argument to the `in` comparator should be an array")
+    }
+    const set = new Set<IGatsbyNode>()
+    if (filterValue.includes(null)) {
+      // Like all other ops, `in: [null]` behaves weirdly, allowing all nodes
+      // that do not actually have a (complete) path (v=undefined)
+      const set = filterCache.byValue.get(undefined)
+      if (set) {
+        set.forEach(v => set.add(v))
+      }
+    }
+    // For every value in the needle array, find the bucket of nodes for
+    // that value, add this bucket of nodes to one set, return the set.
+    filterValue.forEach(v =>
+      filterCache.byValue.get(v)?.forEach(v => set.add(v))
+    )
+    return set
   }
 
   if (op === `$ne`) {
